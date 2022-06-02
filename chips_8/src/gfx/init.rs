@@ -11,8 +11,13 @@ pub struct Gl {
     pub gl: gl::Gl,
 }
 
+pub fn get_c_string_from_data(data: &[u8]) -> Vec<u8> {
+    [data.as_ref(), b"\0"].concat()
+}
+
 pub fn load_vertex_shader(gl: &gl::Gl, shader_src: &[u8]) -> gl::types::GLuint {
     unsafe {
+        let shader_src = get_c_string_from_data(shader_src);
         let vs = gl.CreateShader(gl::VERTEX_SHADER);
         gl.ShaderSource(vs, 1, [shader_src.as_ptr() as *const _].as_ptr(), std::ptr::null());
         gl.CompileShader(vs);
@@ -23,6 +28,7 @@ pub fn load_vertex_shader(gl: &gl::Gl, shader_src: &[u8]) -> gl::types::GLuint {
 
 pub fn load_fragment_shader(gl: &gl::Gl, shader_src: &[u8]) -> gl::types::GLuint {
     unsafe {
+       let shader_src = get_c_string_from_data(shader_src);
        let fs = gl.CreateShader(gl::FRAGMENT_SHADER);
        gl.ShaderSource(fs, 1, [shader_src.as_ptr() as *const _].as_ptr(), std::ptr::null());
        gl.CompileShader(fs);
@@ -107,26 +113,9 @@ pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
 
     println!("OpenGL version {}", version);
 
-    let vs = load_vertex_shader(&gl, b"
-    #version 100
-    precision mediump float;
-    attribute vec2 position;
-    attribute vec3 color;
-    varying vec3 v_color;
-    void main() {
-        gl_Position = vec4(position, 0.0, 1.0);
-        v_color = color;
-    }
-    \0");
+    let vs = load_vertex_shader(&gl, include_bytes!("../shaders/triangle.vert"));
 
-    let fs = load_fragment_shader(&gl, b"
-    #version 100
-    precision mediump float;
-    varying vec3 v_color;
-    void main() {
-        gl_FragColor = vec4(v_color, 1.0);
-    }
-    \0");
+    let fs = load_fragment_shader(&gl, include_bytes!("../shaders/triangle.frag"));
 
     let program = create_program(&gl);
     attach_shader(&gl, &program, vs);
