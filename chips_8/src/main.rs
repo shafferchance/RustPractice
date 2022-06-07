@@ -16,7 +16,7 @@ fn main() {
     let gl = load(&windowed_context.context());
 
     el.run(move |event, _, control_flow| {
-        println!("{:?}", event);
+        // println!("{:?}", event);
         *control_flow = ControlFlow::Wait;
 
         match event {
@@ -27,30 +27,10 @@ fn main() {
                 _ => (),
             },
             Event::RedrawRequested(_) => {
-                gl.draw_frame([1.0, 0.5, 0.2, 1.0]);
+                gl.draw_frame([0.2, 0.3, 0.3, 1.0]);
                 windowed_context.swap_buffers().unwrap();
             },
             _ => (),
         }
     });
-}
-
-#[cfg(test)]
-mod test {
-    #[test]
-    fn include_bytes_has_null_term() {
-        let bytes = include_bytes!("./shaders/triangle.vert");
-        assert_eq!(
-            bytes,
-b"#version 100
-precision mediump float;
-attribute vec2 position;
-attribute vec3 color;
-varying vec3 v_color;
-void main() {
-    gl_Position = vec4(position, 0.0, 1.0);
-    v_color = color;
-}"
-        )
-    }
 }

@@ -1,9 +1,5 @@
-#version 100
-precision mediump float;
-attribute vec2 position;
-attribute vec3 color;
-varying vec3 v_color;
+#version 330 core
+layout (location = 0)in vec3 aPos;
 void main() {
-    gl_Position = vec4(position, 0.0, 1.0);
-    v_color = color;
+    gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);
 }

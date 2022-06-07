@@ -1,6 +1,6 @@
 use glutin::{self, PossiblyCurrent};
 
-use std::ffi::CStr;
+use std::{ffi::CStr, os::raw::c_char};
 
 pub mod gl {
     pub use self::Gles2 as Gl;
@@ -66,6 +66,15 @@ pub fn bind_vertex_array(gl: &gl::Gl) {
     }
 }
 
+pub fn bind_elements_buffer(gl: &gl::Gl, data: &[u8]) {
+    unsafe {
+        let mut ebo = std::mem::zeroed();
+        gl.GenBuffers(1, &mut ebo);
+        gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ebo);
+        gl.BufferData(gl::ELEMENT_ARRAY_BUFFER, (data.len() * std::mem::size_of::<u8>()) as gl::types::GLsizeiptr, data.as_ptr() as *const _, gl::STATIC_DRAW);
+    }
+}
+
 pub fn add_attribute(
     gl: &gl::Gl, 
     program: &gl::types::GLuint, 
@@ -123,12 +132,22 @@ pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
     finalize_shaders(&gl, &program);
 
     load_vertex_shader_data(&gl, &[
-        -0.5, -0.5,  1.0,  0.0,  0.0,
-        0.0,  0.5,  0.0,  1.0,  0.0,
-        0.5, -0.5,  0.0,  0.0,  1.0,
+         0.5,  0.5,  0.0,
+         0.5, -0.5,  0.0,
+        -0.5, -0.5,  0.0,
+        -0.5,  0.5,  0.0,
     ]);
 
+
+
     bind_vertex_array(&gl);
+    let indices = vec![
+        0, 1, 3,
+        1, 2, 3,
+    ];
+
+    bind_elements_buffer(&gl, &indices);
+
 
     let stride = 5 * std::mem::size_of::<f32>() as i32;
     add_attribute(&gl, &program, b"position\0", 2, gl::FLOAT, stride, 0);
@@ -142,7 +161,7 @@ impl Gl {
         unsafe {
             self.gl.ClearColor(color[0], color[1], color[2], color[3]);
             self.gl.Clear(gl::COLOR_BUFFER_BIT);
-            self.gl.DrawArrays(gl::TRIANGLES, 0, 3);
+            self.gl.DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
         }
     }
 }
