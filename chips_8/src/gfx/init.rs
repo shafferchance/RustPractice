@@ -1,18 +1,38 @@
 use glutin::{self, PossiblyCurrent};
 
+use std::rc::Rc;
+use std::ops::Deref;
 use std::ffi::{ CStr, CString };
 
-pub mod gl {
-    pub use self::Gl as OtherGl;
+mod bindings {
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }
 
+pub use self::bindings::Gl as InnerGl;
+
+#[derive(Clone)]
 pub struct Gl {
-    pub gl: gl::Gl,
+    inner: Rc<bindings::Gl>,
+}
+
+impl Gl {
+    pub fn load_with<F>(load_fn: F) -> Gl
+        where F: FnMut(&'static str) -> *const bindings::types::GLvoid
+    {
+        Gl { inner: Rc::new(bindings::Gl::load_with(load_fn)) }    
+    }
 }
 
 pub fn get_c_string_from_data(data: &[u8]) -> Vec<u8> {
     [data.as_ref(), b"\0"].concat()
+}
+
+impl Deref for Gl {
+    type Target = bindings::Gl;
+
+    fn deref(&self) -> &bindings::Gl {
+        &self.inner
+    }
 }
 
 pub fn create_whitespace_cstring_with_len(len: usize) -> CString {
@@ -22,27 +42,26 @@ pub fn create_whitespace_cstring_with_len(len: usize) -> CString {
 }
 
 pub fn shader_from_src (
-    gl: &gl::Gl,
-    source: &[u8],
-    kind: gl::types::GLenum
-) -> Result<gl::types::GLuint, String> {
+    gl: &bindings::Gl,
+    source: &CStr,
+    kind: bindings::types::GLenum
+) -> Result<bindings::types::GLuint, String> {
     let id = unsafe { gl.CreateShader(kind) };
 
     unsafe {
-        let shader_src = get_c_string_from_data(source);
-        gl.ShaderSource(id, 1, [shader_src.as_ptr() as *const _].as_ptr(), std::ptr::null());
+        gl.ShaderSource(id, 1, &source.as_ptr(), std::ptr::null());
         gl.CompileShader(id);
     }
 
-    let mut success: gl::types::GLint = 1;
+    let mut success: bindings::types::GLint = 1;
     unsafe {
-        gl.GetShaderiv(id, gl::COMPILE_STATUS, &mut success);
+        gl.GetShaderiv(id, bindings::COMPILE_STATUS, &mut success);
     }
 
     if success == 0 {
-        let mut len: gl::types::GLint = 0;
+        let mut len: bindings::types::GLint = 0;
         unsafe {
-            gl.GetShaderiv(id, gl::INFO_LOG_LENGTH, &mut len);
+            gl.GetShaderiv(id, bindings::INFO_LOG_LENGTH, &mut len);
         }
         let error = create_whitespace_cstring_with_len(len as usize);
         unsafe {
@@ -50,7 +69,7 @@ pub fn shader_from_src (
                 id,
                 len,
                 std::ptr::null_mut(),
-                error.as_ptr() as *mut gl::types::GLchar
+                error.as_ptr() as *mut bindings::types::GLchar
             );
         }
 
@@ -60,31 +79,31 @@ pub fn shader_from_src (
     Ok(id)
 }
 
-pub struct Shader<'a> {
-    gl: &'a gl::Gl,
-    id: gl::types::GLuint,
+pub struct Shader {
+    gl: bindings::Gl,
+    id: bindings::types::GLuint,
 }
 
-impl<'a> Shader<'a> {
+impl Shader {
     pub fn from_source(
-        gl: &'a gl::Gl,
-        source: &[u8],
-        kind: gl::types::GLenum
-    ) -> Result<Shader<'a>, String> {
+        gl: &bindings::Gl,
+        source: &CStr,
+        kind: bindings::types::GLenum
+    ) -> Result<Shader, String> {
         let id = shader_from_src(gl, source, kind)?;
-        Ok(Shader { gl, id })
+        Ok(Shader { gl: gl.clone(), id })
     }
 
-    pub fn from_vert_source(gl: &'a gl::Gl, source: &[u8]) -> Result<Shader<'a>, String> {
-        Shader::from_source(gl, source, gl::VERTEX_SHADER)
+    pub fn from_vert_source(gl: &bindings::Gl, source: &CStr) -> Result<Shader, String> {
+        Shader::from_source(gl, source, bindings::VERTEX_SHADER)
     }
 
-    pub fn from_frag_source(gl: &'a gl::Gl, source: &[u8]) -> Result<Shader<'a>, String> {
-        Shader::from_source(gl, source, gl::FRAGMENT_SHADER)
+    pub fn from_frag_source(gl: &bindings::Gl, source: &CStr) -> Result<Shader, String> {
+        Shader::from_source(gl, source, bindings::FRAGMENT_SHADER)
     }
 }
 
-impl<'a> Drop for Shader<'a> {
+impl Drop for Shader {
     fn drop(&mut self) {
         unsafe {
             self.gl.DeleteShader(self.id);
@@ -92,75 +111,164 @@ impl<'a> Drop for Shader<'a> {
     }
 }
 
-pub fn create_program(gl: &gl::Gl) -> gl::types::GLuint {
+pub fn create_program(gl: &bindings::Gl) -> bindings::types::GLuint {
     unsafe { gl.CreateProgram() }
 }
 
-pub fn load_vertex_shader_data<'a>(gl: &'a gl::Gl, vertex_buffer: &[f32]) {
+pub struct Program {
+    gl: bindings::Gl,
+    id: bindings::types::GLuint,
+}
+
+impl Program {
+    pub fn from_shaders(gl: &bindings::Gl, shaders: &[Shader]) -> Result<Program, String> {
+        let program_id = unsafe { gl.CreateProgram() };
+
+        for shader in shaders {
+            unsafe { gl.AttachShader(program_id, shader.id); }
+        }
+
+        unsafe { gl.LinkProgram(program_id); }
+
+        let mut success: bindings::types::GLint = 1;
+        unsafe {
+            gl.GetProgramiv(program_id, bindings::LINK_STATUS, &mut success);
+        }
+
+        if success == 0 {
+            let mut len: bindings::types::GLint = 0;
+            unsafe {
+                gl.GetProgramiv(program_id, bindings::INFO_LOG_LENGTH, &mut len);
+            }
+
+            let error = create_whitespace_cstring_with_len(len as usize);
+
+            unsafe {
+                gl.GetProgramInfoLog(program_id, len, std::ptr::null_mut(), error.as_ptr() as *mut bindings::types::GLchar);
+            }
+
+            return Err(error.to_string_lossy().into_owned());
+        }
+
+        for shader in shaders {
+            unsafe { gl.DetachShader(program_id, shader.id); }
+        }
+
+        Ok(Program { gl: gl.clone(), id: program_id })
+    }
+
+    pub fn set_used(&self) {
+        unsafe {
+            self.gl.UseProgram(self.id);
+        }
+    }
+}
+
+impl Drop for Program {
+    fn drop(&mut self) {
+        unsafe {
+            self.gl.DeleteProgram(self.id);
+        }
+    }
+}
+
+pub fn load_elements_shader_data(gl: &bindings::Gl, vertex_buffer: &[f32], indices: &[i32]) -> (bindings::types::GLuint, bindings::types::GLuint, bindings::types::GLuint) {
+    let mut vbo: bindings::types::GLuint = 0;
+    let mut vao: bindings::types::GLuint = 0;
+    let mut ebo: bindings::types::GLuint = 0;
     unsafe {
-        let mut vb = std::mem::zeroed();
-        gl.GenBuffers(1, &mut vb);
-        gl.BindBuffer(gl::ARRAY_BUFFER, vb);
+        // Generated buffers
+        gl.GenVertexArrays(1, &mut vao);
+        gl.GenBuffers(1, &mut vbo);
+        gl.GenBuffers(1, &mut ebo);
+
+        // Bind and fill buffers
+        gl.BindVertexArray(vao);
+
+        gl.BindBuffer(bindings::ARRAY_BUFFER, vbo);
         gl.BufferData(
-            gl::ARRAY_BUFFER,
-            (vertex_buffer.len() * std::mem::size_of::<f32>()) as gl::types::GLsizeiptr,
-            vertex_buffer.as_ptr() as *const _,
-            gl::STATIC_DRAW,
+            bindings::ARRAY_BUFFER,
+            (vertex_buffer.len() * std::mem::size_of::<f32>()) as bindings::types::GLsizeiptr,
+            vertex_buffer.as_ptr() as *const bindings::types::GLvoid,
+            bindings::STATIC_DRAW,
+        );
+        gl.BindBuffer(bindings::ELEMENT_ARRAY_BUFFER, ebo);
+        gl.BufferData(
+            bindings::ELEMENT_ARRAY_BUFFER, 
+            (indices.len() * std::mem::size_of::<i32>()) as bindings::types::GLsizeiptr, 
+            indices.as_ptr() as *const bindings::types::GLvoid, 
+            bindings::STATIC_DRAW
+        );
+        // Since setting these externally we cannot unbind either
+        // gl.BindBuffer(bindings::ARRAY_BUFFER, 0);
+        // gl.BindVertexArray(0);
+    }
+
+    return (vbo, vao, ebo);
+}
+
+pub fn load_vertex_shader_data(gl: &bindings::Gl, vertex_buffer: &[f32]) -> (bindings::types::GLuint, bindings::types::GLuint) {
+    let mut vbo: bindings::types::GLuint = 0;
+    let mut vao: bindings::types::GLuint = 0;
+    unsafe {
+        gl.GenVertexArrays(1, &mut vao);
+        gl.BindVertexArray(vao);
+        // gl.BindBuffer(bindings::ARRAY_BUFFER, 0);
+    };
+
+    unsafe {
+        gl.GenBuffers(1, &mut vbo);
+        gl.BindBuffer(bindings::ARRAY_BUFFER, vbo);
+        gl.BufferData(
+            bindings::ARRAY_BUFFER,
+            (vertex_buffer.len() * std::mem::size_of::<f32>()) as bindings::types::GLsizeiptr,
+            vertex_buffer.as_ptr() as *const bindings::types::GLvoid,
+            bindings::STATIC_DRAW,
         );
     }
+
+    return (vbo, vao);
 }
 
-// TODO: Need to figure out what this is...
-pub fn bind_vertex_array(gl: &gl::Gl) {
-    if gl.BindVertexArray.is_loaded() {
-        unsafe {
-            let mut vao = std::mem::zeroed();
-            gl.GenVertexArrays(1, &mut vao);
-            gl.BindVertexArray(vao);
-        };
-    }
-}
-
-pub fn bind_elements_buffer(gl: &gl::Gl, data: &[u8]) {
+pub fn bind_elements_buffer(gl: &bindings::Gl, data: &[u8]) {
     unsafe {
         let mut ebo = std::mem::zeroed();
         gl.GenBuffers(1, &mut ebo);
-        gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ebo);
-        gl.BufferData(gl::ELEMENT_ARRAY_BUFFER, (data.len() * std::mem::size_of::<u8>()) as gl::types::GLsizeiptr, data.as_ptr() as *const _, gl::STATIC_DRAW);
+        gl.BindBuffer(bindings::ELEMENT_ARRAY_BUFFER, ebo);
+        gl.BufferData(bindings::ELEMENT_ARRAY_BUFFER, (data.len() * std::mem::size_of::<u8>()) as bindings::types::GLsizeiptr, data.as_ptr() as *const _, bindings::STATIC_DRAW);
     }
 }
 
 pub fn add_attribute(
-    gl: &gl::Gl, 
-    program: &gl::types::GLuint, 
-    attribute_name: &[u8],
+    gl: &bindings::Gl, 
+    // program: &bindings::types::GLuint, 
+    attribute_location: bindings::types::GLuint,
     size: i32,
-    attribute_type: gl::types::GLenum,
-    stride: i32,                        // This should be constant, at-least it seems?
-    pointer_offset: usize               // This is the offset within the Array Buffer!
+    attribute_type: bindings::types::GLenum,
+    stride: bindings::types::GLsizei,                        // This should be constant, at-least it seems?
+    pointer_offset: *const bindings::types::GLvoid,               // This is the offset within the Array Buffer!
 ) {
     unsafe {
-        let pointer = if pointer_offset == 0 { std::ptr::null() } else { pointer_offset as *const () as *const _ };
-        let attribute_location = gl.GetAttribLocation(*program, attribute_name.as_ptr() as *const _);
+        // let attribute_location = gl.GetAttribLocation(*program, attribute_name.as_ptr() as *const _);
+        gl.EnableVertexAttribArray(attribute_location);
         gl.VertexAttribPointer(
-            attribute_location as gl::types::GLuint, 
+            attribute_location, 
             size, 
             attribute_type, 
             0, 
-            stride as gl::types::GLsizei, 
-            pointer
+            stride, 
+            pointer_offset
         );
-        gl.EnableVertexAttribArray(attribute_location as gl::types::GLuint);
     };
 }
 
-pub fn attach_shader(gl: &gl::Gl, program: &gl::types::GLuint, shader_data: gl::types::GLuint) {
+pub fn attach_shader(gl: &bindings::Gl, program: &bindings::types::GLuint, shader_data: bindings::types::GLuint) {
     unsafe {
         gl.AttachShader(*program, shader_data)
     }
 }
 
-pub fn finalize_shaders(gl: &gl::Gl, program: &gl::types::GLuint) {
+pub fn finalize_shaders(gl: &bindings::Gl, program: &bindings::types::GLuint) {
     unsafe {
         gl.LinkProgram(*program);
         gl.UseProgram(*program);
@@ -175,60 +283,65 @@ pub fn get_cstr_from_bytes(file_bytes: &[u8]) -> &CStr {
 }
 
 pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
-    let gl = gl::Gl::load_with(|ptr| gl_context.get_proc_address(ptr) as *const _);
+    let gl = Gl::load_with(|ptr| gl_context.get_proc_address(ptr) as *const std::os::raw::c_void);
 
     let version = unsafe {
-        let data = CStr::from_ptr(gl.GetString(gl::VERSION) as *const _).to_bytes().to_vec();
+        let data = CStr::from_ptr(gl.GetString(bindings::VERSION) as *const _).to_bytes().to_vec();
         String::from_utf8(data).unwrap()
     };
 
     println!("OpenGL version {}", version);
-    let vs = match Shader::from_vert_source(&gl, include_bytes!("../shaders/triangle.vert")) {
-        Ok(shader) => shader,
-        Err(err) => panic!("{}", err)
-    };
+    let vs = Shader::from_vert_source(&gl, &CString::new(include_str!("../shaders/triangle.vert")).unwrap()).unwrap();
+    let fs = Shader::from_frag_source(&gl, &CString::new(include_str!("../shaders/triangle.frag")).unwrap()).unwrap();
+    let program = Program::from_shaders(&gl, &[vs, fs]).unwrap();
+    program.set_used();
 
-    let fs = match Shader::from_frag_source(&gl, include_bytes!("../shaders/triangle.frag")) {
-        Ok(shader) => shader,
-        Err(err) => panic!("{}",err)
-    };
+//     let triangle_verts = [
+//         // Positions       // Colors
+//         -0.5, -0.5,  0.0,  1.0,  0.0,  0.0, 
+//          0.5, -0.5,  0.0,  0.0,  1.0,  0.0,
+//          0.0,  0.5,  0.0,  0.0,  0.0,  1.0
+//    ];
 
-    let program = create_program(&gl);
-    attach_shader(&gl, &program, vs.id);
-    attach_shader(&gl, &program, fs.id);
-    finalize_shaders(&gl, &program);
-
-    load_vertex_shader_data(&gl, &[
-         0.5,  0.5,  0.0,
-         0.5, -0.5,  0.0,
-        -0.5, -0.5,  0.0,
-        -0.5,  0.5,  0.0,
-    ]);
-
-
-
-    bind_vertex_array(&gl);
-    let indices = vec![
-        0, 1, 3,
-        1, 2, 3,
+    let rectangle_vertices = [
+         0.5,  0.5,  0.0,  1.0, 0.0, 0.0,
+         0.5, -0.5,  0.0,  0.0, 1.0, 0.0,
+        -0.5, -0.5,  0.0,  0.0, 1.0, 0.0,
+        -0.5,  0.5,  0.0,  0.0, 0.0, 1.0
     ];
 
-    bind_elements_buffer(&gl, &indices);
+    let indices = [
+        0, 1, 3,
+        1, 2, 3
+    ];
+    // load_vertex_shader_data(&gl, &triangle_verts);
+    let (_vbo, _vao, _ebo) = load_elements_shader_data(&gl, &rectangle_vertices, &indices);
+    add_attribute(&gl, 0, 3, bindings::FLOAT, 6 * std::mem::size_of::<f32>() as bindings::types::GLint, 0 as *const bindings::types::GLvoid);
+    add_attribute(&gl, 1, 3, bindings::FLOAT, 6 * std::mem::size_of::<f32>() as bindings::types::GLint, (3 * std::mem::size_of::<f32>()) as *const bindings::types::GLvoid);
+    unsafe {
+        gl.BindBuffer(bindings::ARRAY_BUFFER, 0);
+        // gl.BindVertexArray(vao);
+    }
 
 
-    let stride = 5 * std::mem::size_of::<f32>() as i32;
-    add_attribute(&gl, &program, b"position\0", 2, gl::FLOAT, stride, 0);
-    add_attribute(&gl, &program, b"color\0", 3, gl::FLOAT, stride, 2 * std::mem::size_of::<f32>());
-
-    Gl { gl: gl.to_owned() }
+    return gl;
 }
 
 impl Gl {
     pub fn draw_frame(&self, color: [f32; 4]) {
         unsafe {
-            self.gl.ClearColor(color[0], color[1], color[2], color[3]);
-            self.gl.Clear(gl::COLOR_BUFFER_BIT);
-            self.gl.DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, 0 as *const _);
+            self.inner.ClearColor(color[0], color[1], color[2], color[3]);
+            self.inner.Clear(bindings::COLOR_BUFFER_BIT);
+            // self.inner.DrawArrays(
+            //     bindings::TRIANGLES,
+            //     0,
+            //     3
+            // );
+            self.inner.DrawElements(
+                bindings::TRIANGLES, 
+                6 as bindings::types::GLint,
+                bindings::UNSIGNED_INT,
+                std::ptr::null() as *const bindings::types::GLvoid);
         }
     }
 }

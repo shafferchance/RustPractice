@@ -1,4 +1,4 @@
-use gl_generator::{Api, Fallbacks, Profile, Registry};
+use gl_generator::{Api, DebugStructGenerator, Fallbacks, Profile, Registry, StructGenerator};
 use std::env;
 use std::fs::File;
 use std::path::PathBuf;
@@ -8,7 +8,11 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     let mut file = File::create(&dest.join("gl_bindings.rs")).unwrap();
-    Registry::new(Api::Gl, (4, 6), Profile::Core, Fallbacks::All, [])
-        .write_bindings(gl_generator::StructGenerator, &mut file)
-        .unwrap();
+    let registry = Registry::new(Api::Gl, (4, 6), Profile::Core, Fallbacks::All, []);
+
+    if env::var("CARGO_FEATURE_GL_DEBUG").is_ok() {
+        registry.write_bindings(DebugStructGenerator, &mut file).unwrap();
+    } else {
+        registry.write_bindings(StructGenerator, &mut file).unwrap();
+    }
 }
