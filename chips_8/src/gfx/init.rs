@@ -23,13 +23,14 @@ pub fn create_whitespace_cstring_with_len(len: usize) -> CString {
 
 pub fn shader_from_src (
     gl: &gl::Gl,
-    source: &CStr,
+    source: &[u8],
     kind: gl::types::GLenum
 ) -> Result<gl::types::GLuint, String> {
     let id = unsafe { gl.CreateShader(kind) };
 
     unsafe {
-        gl.ShaderSource(id, 1, &source.as_ptr(), std::ptr::null());
+        let shader_src = get_c_string_from_data(source);
+        gl.ShaderSource(id, 1, [shader_src.as_ptr() as *const _].as_ptr(), std::ptr::null());
         gl.CompileShader(id);
     }
 
@@ -67,18 +68,18 @@ pub struct Shader<'a> {
 impl<'a> Shader<'a> {
     pub fn from_source(
         gl: &'a gl::Gl,
-        source: &CStr,
+        source: &[u8],
         kind: gl::types::GLenum
     ) -> Result<Shader<'a>, String> {
         let id = shader_from_src(gl, source, kind)?;
         Ok(Shader { gl, id })
     }
 
-    pub fn from_vert_source(gl: &'a gl::Gl, source: &CStr) -> Result<Shader<'a>, String> {
+    pub fn from_vert_source(gl: &'a gl::Gl, source: &[u8]) -> Result<Shader<'a>, String> {
         Shader::from_source(gl, source, gl::VERTEX_SHADER)
     }
 
-    pub fn from_frag_source(gl: &'a gl::Gl, source: &CStr) -> Result<Shader<'a>, String> {
+    pub fn from_frag_source(gl: &'a gl::Gl, source: &[u8]) -> Result<Shader<'a>, String> {
         Shader::from_source(gl, source, gl::FRAGMENT_SHADER)
     }
 }
@@ -166,10 +167,10 @@ pub fn finalize_shaders(gl: &gl::Gl, program: &gl::types::GLuint) {
     }
 }
 
-pub fn get_cstr_from_bytes(path: &str) -> &CStr {
-    match CStr::from_bytes_with_nul(get_c_string_from_data(include_bytes!("../shaders/triangle.vert"))) {
+pub fn get_cstr_from_bytes(file_bytes: &[u8]) -> &CStr {
+    match CStr::from_bytes_with_nul(file_bytes) {
         Ok(data) => data,
-        Err(err) => panic!(err)
+        Err(err) => panic!("{}", err)
     }
 }
 
@@ -182,19 +183,19 @@ pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
     };
 
     println!("OpenGL version {}", version);
-
-    let vert_shader_str = match(CStr::from_bytes_with_nul(include_bytes!("../shaders/triangle.vert"))) {
-        Ok(data) => data,
-        Err(err) => panic!(err)
+    let vs = match Shader::from_vert_source(&gl, include_bytes!("../shaders/triangle.vert")) {
+        Ok(shader) => shader,
+        Err(err) => panic!("{}", err)
     };
-    let vs = Shader::from_vert_source(&gl, vert_shader_str);
 
-    let frag_shader_str = match()
-    let fs = load_fragment_shader(&gl, include_bytes!("../shaders/triangle.frag"));
+    let fs = match Shader::from_frag_source(&gl, include_bytes!("../shaders/triangle.frag")) {
+        Ok(shader) => shader,
+        Err(err) => panic!("{}",err)
+    };
 
     let program = create_program(&gl);
-    attach_shader(&gl, &program, vs);
-    attach_shader(&gl, &program, fs);
+    attach_shader(&gl, &program, vs.id);
+    attach_shader(&gl, &program, fs.id);
     finalize_shaders(&gl, &program);
 
     load_vertex_shader_data(&gl, &[
@@ -219,7 +220,7 @@ pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
     add_attribute(&gl, &program, b"position\0", 2, gl::FLOAT, stride, 0);
     add_attribute(&gl, &program, b"color\0", 3, gl::FLOAT, stride, 2 * std::mem::size_of::<f32>());
 
-    Gl { gl }
+    Gl { gl: gl.to_owned() }
 }
 
 impl Gl {
