@@ -1,9 +1,9 @@
 use glutin::{self, PossiblyCurrent};
 
-use std::{ffi::CStr, os::raw::c_char};
+use std::ffi::{ CStr, CString };
 
 pub mod gl {
-    pub use self::Gles2 as Gl;
+    pub use self::Gl as OtherGl;
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }
 
@@ -15,26 +15,80 @@ pub fn get_c_string_from_data(data: &[u8]) -> Vec<u8> {
     [data.as_ref(), b"\0"].concat()
 }
 
-pub fn load_vertex_shader(gl: &gl::Gl, shader_src: &[u8]) -> gl::types::GLuint {
+pub fn create_whitespace_cstring_with_len(len: usize) -> CString {
+    let mut buffer: Vec<u8> = Vec::with_capacity(len as usize + 1);
+    buffer.extend([b' '].iter().cycle().take(len as usize));
+    unsafe { CString::from_vec_unchecked(buffer) }
+}
+
+pub fn shader_from_src (
+    gl: &gl::Gl,
+    source: &CStr,
+    kind: gl::types::GLenum
+) -> Result<gl::types::GLuint, String> {
+    let id = unsafe { gl.CreateShader(kind) };
+
     unsafe {
-        let shader_src = get_c_string_from_data(shader_src);
-        let vs = gl.CreateShader(gl::VERTEX_SHADER);
-        gl.ShaderSource(vs, 1, [shader_src.as_ptr() as *const _].as_ptr(), std::ptr::null());
-        gl.CompileShader(vs);
-        
-        vs
+        gl.ShaderSource(id, 1, &source.as_ptr(), std::ptr::null());
+        gl.CompileShader(id);
+    }
+
+    let mut success: gl::types::GLint = 1;
+    unsafe {
+        gl.GetShaderiv(id, gl::COMPILE_STATUS, &mut success);
+    }
+
+    if success == 0 {
+        let mut len: gl::types::GLint = 0;
+        unsafe {
+            gl.GetShaderiv(id, gl::INFO_LOG_LENGTH, &mut len);
+        }
+        let error = create_whitespace_cstring_with_len(len as usize);
+        unsafe {
+            gl.GetShaderInfoLog(
+                id,
+                len,
+                std::ptr::null_mut(),
+                error.as_ptr() as *mut gl::types::GLchar
+            );
+        }
+
+        return Err(error.to_string_lossy().into_owned());
+    }
+
+    Ok(id)
+}
+
+pub struct Shader<'a> {
+    gl: &'a gl::Gl,
+    id: gl::types::GLuint,
+}
+
+impl<'a> Shader<'a> {
+    pub fn from_source(
+        gl: &'a gl::Gl,
+        source: &CStr,
+        kind: gl::types::GLenum
+    ) -> Result<Shader<'a>, String> {
+        let id = shader_from_src(gl, source, kind)?;
+        Ok(Shader { gl, id })
+    }
+
+    pub fn from_vert_source(gl: &'a gl::Gl, source: &CStr) -> Result<Shader<'a>, String> {
+        Shader::from_source(gl, source, gl::VERTEX_SHADER)
+    }
+
+    pub fn from_frag_source(gl: &'a gl::Gl, source: &CStr) -> Result<Shader<'a>, String> {
+        Shader::from_source(gl, source, gl::FRAGMENT_SHADER)
     }
 }
 
-pub fn load_fragment_shader(gl: &gl::Gl, shader_src: &[u8]) -> gl::types::GLuint {
-    unsafe {
-       let shader_src = get_c_string_from_data(shader_src);
-       let fs = gl.CreateShader(gl::FRAGMENT_SHADER);
-       gl.ShaderSource(fs, 1, [shader_src.as_ptr() as *const _].as_ptr(), std::ptr::null());
-       gl.CompileShader(fs);
-    
-       fs
-   }
+impl<'a> Drop for Shader<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            self.gl.DeleteShader(self.id);
+        }
+    }
 }
 
 pub fn create_program(gl: &gl::Gl) -> gl::types::GLuint {
@@ -112,6 +166,13 @@ pub fn finalize_shaders(gl: &gl::Gl, program: &gl::types::GLuint) {
     }
 }
 
+pub fn get_cstr_from_bytes(path: &str) -> &CStr {
+    match CStr::from_bytes_with_nul(get_c_string_from_data(include_bytes!("../shaders/triangle.vert"))) {
+        Ok(data) => data,
+        Err(err) => panic!(err)
+    }
+}
+
 pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
     let gl = gl::Gl::load_with(|ptr| gl_context.get_proc_address(ptr) as *const _);
 
@@ -122,8 +183,13 @@ pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
 
     println!("OpenGL version {}", version);
 
-    let vs = load_vertex_shader(&gl, include_bytes!("../shaders/triangle.vert"));
+    let vert_shader_str = match(CStr::from_bytes_with_nul(include_bytes!("../shaders/triangle.vert"))) {
+        Ok(data) => data,
+        Err(err) => panic!(err)
+    };
+    let vs = Shader::from_vert_source(&gl, vert_shader_str);
 
+    let frag_shader_str = match()
     let fs = load_fragment_shader(&gl, include_bytes!("../shaders/triangle.frag"));
 
     let program = create_program(&gl);
