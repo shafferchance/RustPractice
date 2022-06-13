@@ -4,10 +4,11 @@ use std::rc::Rc;
 use std::ops::Deref;
 use std::ffi::{ CStr, CString };
 
-mod bindings {
+pub mod bindings {
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }
 
+use self::bindings::ARRAY_BUFFER;
 pub use self::bindings::Gl as InnerGl;
 
 #[derive(Clone)]
@@ -121,10 +122,10 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn from_shaders(gl: &bindings::Gl, shaders: &[Shader]) -> Result<Program, String> {
+    pub fn from_shaders(gl: &bindings::Gl, shaders: Box<[Shader]>) -> Result<Program, String> {
         let program_id = unsafe { gl.CreateProgram() };
 
-        for shader in shaders {
+        for shader in shaders.into_iter() {
             unsafe { gl.AttachShader(program_id, shader.id); }
         }
 
@@ -150,7 +151,7 @@ impl Program {
             return Err(error.to_string_lossy().into_owned());
         }
 
-        for shader in shaders {
+        for shader in shaders.into_iter() {
             unsafe { gl.DetachShader(program_id, shader.id); }
         }
 
@@ -172,7 +173,7 @@ impl Drop for Program {
     }
 }
 
-pub fn load_elements_shader_data(gl: &bindings::Gl, vertex_buffer: &[f32], indices: &[i32]) -> (bindings::types::GLuint, bindings::types::GLuint, bindings::types::GLuint) {
+pub fn load_elements_shader_data(gl: &bindings::Gl, vertex_buffer: &Box<[f32]>, indices: &Box<[i32]>) -> (bindings::types::GLuint, bindings::types::GLuint, bindings::types::GLuint) {
     let mut vbo: bindings::types::GLuint = 0;
     let mut vao: bindings::types::GLuint = 0;
     let mut ebo: bindings::types::GLuint = 0;
@@ -199,25 +200,19 @@ pub fn load_elements_shader_data(gl: &bindings::Gl, vertex_buffer: &[f32], indic
             indices.as_ptr() as *const bindings::types::GLvoid, 
             bindings::STATIC_DRAW
         );
-        // Since setting these externally we cannot unbind either
-        // gl.BindBuffer(bindings::ARRAY_BUFFER, 0);
-        // gl.BindVertexArray(0);
     }
 
     return (vbo, vao, ebo);
 }
 
-pub fn load_vertex_shader_data(gl: &bindings::Gl, vertex_buffer: &[f32]) -> (bindings::types::GLuint, bindings::types::GLuint) {
+pub fn load_vertex_shader_data(gl: &bindings::Gl, vertex_buffer: &Box<[f32]>) -> (bindings::types::GLuint, bindings::types::GLuint) {
     let mut vbo: bindings::types::GLuint = 0;
     let mut vao: bindings::types::GLuint = 0;
     unsafe {
         gl.GenVertexArrays(1, &mut vao);
-        gl.BindVertexArray(vao);
-        // gl.BindBuffer(bindings::ARRAY_BUFFER, 0);
-    };
-
-    unsafe {
         gl.GenBuffers(1, &mut vbo);
+
+        gl.BindVertexArray(vao);
         gl.BindBuffer(bindings::ARRAY_BUFFER, vbo);
         gl.BufferData(
             bindings::ARRAY_BUFFER,
@@ -282,7 +277,84 @@ pub fn get_cstr_from_bytes(file_bytes: &[u8]) -> &CStr {
     }
 }
 
-pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
+type PixelValue = (u8, u8, u8, u8);
+type TextureAttribute = (bindings::types::GLenum, bindings::types::GLenum);
+
+// Inefficient yes, but we're going to try!
+pub struct Texture {
+    pixels: Box<[u8]>,
+    texture_type: bindings::types::GLenum,
+    id: bindings::types::GLuint,
+    width: usize,
+    height: usize,
+    gl: bindings::Gl,
+    attributes: Box<[TextureAttribute]>
+    // Should I store the texture id?
+}
+
+impl Texture {
+    pub fn new (gl: &bindings::Gl, width_size: usize, height_size: usize, texture_type: bindings::types::GLenum, attributes: Box<[TextureAttribute]>) -> Texture {
+        let pixels = 
+            (0..((width_size * height_size) * 4))
+                .map(|_| 0 as u8)
+                .collect::<Vec<u8>>()
+                .into_boxed_slice();
+        let mut id: bindings::types::GLuint = 0;
+        unsafe {
+            gl.GenTextures(1, &mut id);
+        };
+
+        Texture { pixels, id, texture_type, width: width_size, height: height_size, attributes, gl: gl.clone()}
+    }
+
+    fn set_texture_parameter(&self, parameter_name: bindings::types::GLenum, param: bindings::types::GLint) {
+        unsafe {
+            // Need to ensure we're operating on the right texture
+            self.gl.TexParameteri(self.texture_type, parameter_name, param);
+        }
+    }
+
+    pub fn edit_texture_data(&mut self, x: usize, y: usize, pixel_data: PixelValue) {
+        // Assuming this is row driven
+        let index = (self.width * y) + x;
+        self.pixels[index]     = pixel_data.0;
+        self.pixels[index + 1] = pixel_data.1;
+        self.pixels[index + 2] = pixel_data.2;
+        self.pixels[index + 3] = pixel_data.3;
+    }
+
+    pub fn load_texture_data(&self, ) {
+        unsafe {
+            self.gl.BindTexture(self.texture_type, 0);
+            self.gl.BindTexture(self.texture_type, self.id);
+            // This will need an external function to figure out which to use eventually...
+            self.gl.TexImage2D(
+                self.texture_type, 
+                0, 
+                bindings::RGBA as bindings::types::GLint, 
+                self.width as i32, 
+                self.height as i32, 
+                0, 
+                bindings::RGBA, 
+                bindings::UNSIGNED_BYTE, 
+                self.pixels.as_ptr() as *const bindings::types::GLvoid
+            );
+            self.gl.GenerateMipmap(self.texture_type);
+            self.attributes.into_iter().for_each(|attribute| {
+                self.set_texture_parameter(attribute.0, attribute.1 as bindings::types::GLint);
+            });
+            self.gl.BindTexture(self.texture_type, 0);
+        }
+    }
+}
+
+impl Drop for Texture {
+    fn drop(&mut self) {
+        unsafe { self.gl.DeleteTextures(1, self.id as *const bindings::types::GLuint);  }
+    }
+}
+
+pub fn load_gl(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
     let gl = Gl::load_with(|ptr| gl_context.get_proc_address(ptr) as *const std::os::raw::c_void);
 
     let version = unsafe {
@@ -291,57 +363,168 @@ pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
     };
 
     println!("OpenGL version {}", version);
-    let vs = Shader::from_vert_source(&gl, &CString::new(include_str!("../shaders/triangle.vert")).unwrap()).unwrap();
-    let fs = Shader::from_frag_source(&gl, &CString::new(include_str!("../shaders/triangle.frag")).unwrap()).unwrap();
-    let program = Program::from_shaders(&gl, &[vs, fs]).unwrap();
-    program.set_used();
 
-//     let triangle_verts = [
-//         // Positions       // Colors
-//         -0.5, -0.5,  0.0,  1.0,  0.0,  0.0, 
-//          0.5, -0.5,  0.0,  0.0,  1.0,  0.0,
-//          0.0,  0.5,  0.0,  0.0,  0.0,  1.0
-//    ];
+    gl
+}
 
-    let rectangle_vertices = [
-         0.5,  0.5,  0.0,  1.0, 0.0, 0.0,
-         0.5, -0.5,  0.0,  0.0, 1.0, 0.0,
-        -0.5, -0.5,  0.0,  0.0, 1.0, 0.0,
-        -0.5,  0.5,  0.0,  0.0, 0.0, 1.0
-    ];
+type Attributes = (bindings::types::GLuint, i32);
+                      // Vertex Buffer Object  // Vertex Array Object   // Element Buffer Object
+type ObjectBuffers = (bindings::types::GLuint, bindings::types::GLuint, Option<bindings::types::GLuint>);
 
-    let indices = [
-        0, 1, 3,
-        1, 2, 3
-    ];
-    // load_vertex_shader_data(&gl, &triangle_verts);
-    let (_vbo, _vao, _ebo) = load_elements_shader_data(&gl, &rectangle_vertices, &indices);
-    add_attribute(&gl, 0, 3, bindings::FLOAT, 6 * std::mem::size_of::<f32>() as bindings::types::GLint, 0 as *const bindings::types::GLvoid);
-    add_attribute(&gl, 1, 3, bindings::FLOAT, 6 * std::mem::size_of::<f32>() as bindings::types::GLint, (3 * std::mem::size_of::<f32>()) as *const bindings::types::GLvoid);
-    unsafe {
-        gl.BindBuffer(bindings::ARRAY_BUFFER, 0);
-        // gl.BindVertexArray(vao);
+pub struct Object {
+    vertices: Box<[f32]>,
+    indices: Option<Box<[i32]>>,
+    // 0.attribute location 1. size (This assumes all values are floats currently...)
+    attributes: Box<[Attributes]>,
+    pub texture: Option<Texture>,
+    program: Option<Program>,
+    // This will likely become a Hashmap later
+    buffers: Option<ObjectBuffers>,
+    stride_length: i32
+}
+
+// TODO: Add support for geometry shaders
+fn init_object_shaders(gl: &bindings::Gl, frag_src: Option<&CStr>, vert_src: Option<&CStr>) -> Box<[Shader]> {
+    // vert, frag, and geo shaders
+    let mut shaders = Vec::<Shader>::with_capacity(3);
+
+    if let Some(fragment_shader) = frag_src {
+        shaders.push(Shader::from_frag_source(gl, fragment_shader).unwrap());
+    };
+
+    if let Some(vertex_shader) = vert_src {
+        shaders.push(Shader::from_vert_source(gl, vertex_shader).unwrap());
+    };
+
+    shaders.into_boxed_slice()
+}
+
+impl Object {
+    pub fn new(vertices: Box<[f32]>, indices: Option<Box<[i32]>>, attributes: Box<[Attributes]>) -> Object {
+        Object { vertices, attributes, indices, texture: None, program: None, buffers: None, stride_length: 0 }
     }
 
+    pub fn new_with_shaders(gl: &bindings::Gl, vertices: Box<[f32]>, indices: Option<Box<[i32]>>, attributes: Box<[Attributes]>, frag_src: Option<&CStr>, vert_src: Option<&CStr>) -> Object {
+        let shaders = init_object_shaders(gl, frag_src, vert_src);
+        let program = match Program::from_shaders(gl, shaders) {
+            Ok(shader) => Some(shader),
+            Err(err) => panic!("{}", err)
+        };
 
-    return gl;
+        Object { vertices, attributes, indices,  program, texture: None, buffers: None, stride_length: 0 }
+    }
+
+    pub fn new_with_texture_shader(gl: &bindings::Gl, vertices: Box<[f32]>, indices: Option<Box<[i32]>>, attributes: Box<[Attributes]>, frag_src: Option<&CStr>, vert_src: Option<&CStr>, width: usize, height: usize, texture_type: bindings::types::GLenum, texture_attributes: Box<[TextureAttribute]>) -> Object {
+        let shaders = init_object_shaders(gl, frag_src, vert_src);
+        let program = match Program::from_shaders(gl, shaders) {
+            Ok(shader) => Some(shader),
+            Err(err) => panic!("{}", err)
+        };
+
+        let texture = 
+            Some(
+                Texture::new(
+                    gl, 
+                    width, 
+                    height, 
+                    texture_type,
+                    texture_attributes
+                ));
+
+        Object { vertices, attributes, texture, program, indices, buffers: None, stride_length: 0 }
+    }
+}
+
+pub struct Scene {
+    objects: Box<[Object]>,
+}
+
+impl Scene {
+    pub fn new( objects: Box<[Object]>) -> Scene {
+        Scene { objects }
+    }
+}
+
+fn unbind_buffers(gl: &bindings::Gl) {
+    unsafe {
+        gl.BindBuffer(ARRAY_BUFFER, 0);
+        gl.BindVertexArray(0);
+    }
+}
+
+fn get_stride_from_attributes_tuple(attributes: &Box<[Attributes]>) -> (i32, bindings::types::GLint) {
+    let stride_length = attributes.into_iter().map(| attrib | attrib.1).sum::<i32>();
+    (stride_length, stride_length * std::mem::size_of::<f32>() as bindings::types::GLint)
+}
+
+pub fn render_object(gl: &bindings::Gl, object: &mut Object) -> Result<(), String> {
+    let buffers = 
+        match &object.indices {
+            Some(indices_array) => {
+                let (vbo, vao, ebo) = load_elements_shader_data(gl, &object.vertices, indices_array);
+                (vbo, vao, Some(ebo))
+            },
+            None => {
+                let (vbo, vao) = load_vertex_shader_data(gl, &object.vertices);
+                (vbo, vao, None)
+            }
+    };
+
+    println!("{:?}", buffers);
+
+    object.buffers = Some(buffers);
+
+    let (stride_length, stride) = get_stride_from_attributes_tuple(&object.attributes);
+    object.stride_length = stride_length;
+    object.attributes.into_iter().fold(0, |acc, &attribute| {
+        add_attribute(gl, attribute.0, attribute.1, bindings::FLOAT, stride, (acc * std::mem::size_of::<f32>()) as *const bindings::types::GLvoid);
+        acc + attribute.1 as usize
+    });
+
+    if let Some(texture) = &object.texture {
+        texture.load_texture_data();
+    }
+
+    unbind_buffers(gl);
+
+    // Might initialize an object that doesn't use a shader
+    if let Some(program) = &object.program {
+        program.set_used();
+    }
+
+    Ok(())
+}
+
+pub fn render_scene(gl: &bindings::Gl, scene: &Scene) {
+    scene.objects.into_iter().for_each(| object | {
+        if let Some(texture) = &object.texture {
+            unsafe { gl.BindTexture(texture.texture_type, texture.id) };
+        }
+
+        if let Some(shader) = &object.program {
+            shader.set_used();
+        }
+
+        if let Some(buffers) = &object.buffers {
+            unsafe { gl.BindVertexArray(buffers.1) }
+
+            if let Some(_) = buffers.2 {
+                unsafe { gl.DrawElements(bindings::TRIANGLES, *&object.indices.as_ref().unwrap().len() as bindings::types::GLint, bindings::UNSIGNED_INT, 0 as *const bindings::types::GLvoid); }
+            } else {
+                unsafe { gl.DrawArrays(bindings::TRIANGLES, 0, (*&object.vertices.len() as bindings::types::GLint) / &object.stride_length)}
+            }
+        } else {
+            panic!("{}", "Buffers were never intialized for object!");
+        }
+    })
 }
 
 impl Gl {
-    pub fn draw_frame(&self, color: [f32; 4]) {
+    pub fn draw_frame(&self, color: [f32; 4], scene: &Scene) {
         unsafe {
             self.inner.ClearColor(color[0], color[1], color[2], color[3]);
             self.inner.Clear(bindings::COLOR_BUFFER_BIT);
-            // self.inner.DrawArrays(
-            //     bindings::TRIANGLES,
-            //     0,
-            //     3
-            // );
-            self.inner.DrawElements(
-                bindings::TRIANGLES, 
-                6 as bindings::types::GLint,
-                bindings::UNSIGNED_INT,
-                std::ptr::null() as *const bindings::types::GLvoid);
+            render_scene(&self.inner, scene);
         }
     }
 }
