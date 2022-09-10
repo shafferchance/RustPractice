@@ -8,19 +8,11 @@ pub fn create_textured_scene(gl: &bindings::Gl) -> Scene {
 
     let rectangle_verts = [
         // Positions       // Colors         // Texture coords
-         1.0,  1.0,  0.0,  1.0,  0.0,  0.0,  1.0,  1.0,
-         1.0, -1.0,  0.0,  0.0,  1.0,  0.0,  1.0,  0.0,
-        -1.0, -1.0,  0.0,  0.0,  0.0,  1.0,  0.0,  0.0,
-        -1.0,  1.0,  0.0,  1.0,  1.0,  0.0,  0.0,  1.0  
+         0.5,  0.5,  0.0,  1.0,  0.0,  0.0,  1.0,  1.0, //  top right
+         0.5, -0.5,  0.0,  0.0,  1.0,  0.0,  1.0,  0.0, //  bottom right
+        -0.5, -0.5,  0.0,  0.0,  0.0,  1.0,  0.0,  0.0, //  bottom left
+        -0.5,  0.5,  0.0,  1.0,  1.0,  0.0,  0.0,  1.0  //  top left
     ];
-
-    // let rectangle_verts = [
-    //     // positions       // colors     // texture coords
-    //      0.5,  0.5, 0.0,   1.0, 0.0, 0.0,   1.0, 1.0, // top right
-    //      0.5, -0.5, 0.0,   0.0, 1.0, 0.0,   1.0, 0.0, // bottom right
-    //     -0.5, -0.5, 0.0,   0.0, 0.0, 1.0,   0.0, 0.0, // bottom left
-    //     -0.5,  0.5, 0.0,   1.0, 1.0, 0.0,   0.0, 1.0  // top left 
-    // ];
 
     let indices = [
         0, 1, 3,
@@ -45,22 +37,22 @@ pub fn create_textured_scene(gl: &bindings::Gl) -> Scene {
         Box::new(attributes), 
         frag_src, 
         vert_src,
-        1024,
-        512,
+        100,
+        100,
         bindings::TEXTURE_2D,
         vec![
-                        // (bindings::TEXTURE_WRAP_S, bindings::CLAMP_TO_EDGE),
-                        // (bindings::TEXTURE_WRAP_T, bindings::CLAMP_TO_EDGE),
+                        (bindings::TEXTURE_WRAP_S, bindings::CLAMP_TO_EDGE),
+                        (bindings::TEXTURE_WRAP_T, bindings::CLAMP_TO_EDGE),
                         (bindings::TEXTURE_MIN_FILTER, bindings::LINEAR_MIPMAP_LINEAR),
                         (bindings::TEXTURE_MAG_FILTER, bindings::LINEAR),
                     ].into_boxed_slice()
     );
 
     if let Some(texture) = &mut rectangle.texture {
-        (0..500)
-            .for_each(|y| {
-                (0..1000).for_each(|x| {
-                    texture.edit_texture_data(x, y, (0, 255, 0, 255))
+        (0..10)
+            .for_each(|x| {
+                (0..10).for_each(|y| {
+                    texture.edit_texture_data(x, y, (100, 255, 0, 255))
                 })
             });
     }

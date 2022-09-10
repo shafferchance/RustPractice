@@ -1,6 +1,6 @@
 use std::ffi::CString;
 
-use crate::gfx::init::{Object, Scene};
+use crate::gfx::init::{Object, Scene, render_object};
 use crate::gfx::init::bindings as bindings;
 
 pub fn create_triangle_scene(gl: &bindings::Gl) -> Scene {
@@ -24,8 +24,19 @@ pub fn create_triangle_scene(gl: &bindings::Gl) -> Scene {
     let frag_src = Some(frag_src_raw.as_c_str());
     let vert_src = Some(vert_src_raw.as_c_str());
 
-    let triangle = Object::new_with_shaders(gl, Box::new(triangle_verts), None, Box::new(attributes), frag_src, vert_src);
-    objects.push(triangle);
+    let mut triangle = Object::new_with_shaders(
+        gl,
+        Box::new(triangle_verts),
+        None,
+        Box::new(attributes),
+        frag_src,
+        vert_src
+    );
+
+    match render_object(gl, &mut triangle) {
+        Ok(_) => objects.push(triangle),
+        Err(err) => panic!("{}", err)
+    }
 
     Scene::new(objects.into_boxed_slice())
 }

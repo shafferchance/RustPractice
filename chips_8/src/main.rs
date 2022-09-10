@@ -1,5 +1,7 @@
 // use chips_8::scenes::rectangle::create_rectangle_scene;
+// use chips_8::scenes::triangle::create_triangle_scene;
 use chips_8::scenes::textured::create_textured_scene;
+// use chips_8::scenes::scissor::create_scissor_scene;
 use glutin::event::{Event, WindowEvent};
 use glutin::event_loop::{ControlFlow, EventLoop};
 use glutin::window::WindowBuilder;
@@ -9,7 +11,10 @@ use chips_8::gfx::init::load_gl;
 
 fn main() {
     let el = EventLoop::new();
-    let wb = WindowBuilder::new().with_title("Chips 8").with_inner_size(glutin::dpi::LogicalSize::new(1024, 512));
+    let wb = WindowBuilder::new()
+                                            .with_title("Chips 8")
+                                            .with_inner_size(
+                                                glutin::dpi::LogicalSize::new(512, 512));
 
     let windowed_context = ContextBuilder::new().build_windowed(wb, &el).unwrap();
     let windowed_context = unsafe { windowed_context.make_current().unwrap() };
@@ -17,7 +22,10 @@ fn main() {
     println!("Pixel format of the window's GL context: {:?}", windowed_context.get_pixel_format());
     let gl = load_gl(&windowed_context.context());
 
+    // let scene = create_scissor_scene(&gl);
     let scene = create_textured_scene(&gl);
+    // let scene = create_rectangle_scene(&gl);
+    // let scene = create_triangle_scene(&gl);
 
     el.run(move |event, _, control_flow| {
         // println!("{:?}", event);

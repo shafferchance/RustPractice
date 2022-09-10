@@ -282,21 +282,29 @@ type TextureAttribute = (bindings::types::GLenum, bindings::types::GLenum);
 
 // Inefficient yes, but we're going to try!
 pub struct Texture {
-    pixels: Box<[u8]>,
+    pub pixels: Box<[u8]>,
     texture_type: bindings::types::GLenum,
     id: bindings::types::GLuint,
     width: usize,
     height: usize,
     gl: bindings::Gl,
     attributes: Box<[TextureAttribute]>
-    // Should I store the texture id?
 }
 
 impl Texture {
     pub fn new (gl: &bindings::Gl, width_size: usize, height_size: usize, texture_type: bindings::types::GLenum, attributes: Box<[TextureAttribute]>) -> Texture {
+        let mut inner_index = 1;
         let pixels = 
             (0..((width_size * height_size) * 4))
-                .map(|_| 0 as u8)
+                .map(|_| {
+                    if inner_index == 4 {
+                        inner_index = 1;
+                        return 255;
+                    }
+                    inner_index += 1;
+
+                    0 as u8
+                })
                 .collect::<Vec<u8>>()
                 .into_boxed_slice();
         let mut id: bindings::types::GLuint = 0;
@@ -316,7 +324,8 @@ impl Texture {
 
     pub fn edit_texture_data(&mut self, x: usize, y: usize, pixel_data: PixelValue) {
         // Assuming this is row driven
-        let index = (self.width * y) + x;
+        let index = ((self.width * y) + x) * 4;
+        // println!("{}", index);
         self.pixels[index]     = pixel_data.0;
         self.pixels[index + 1] = pixel_data.1;
         self.pixels[index + 2] = pixel_data.2;
@@ -348,11 +357,11 @@ impl Texture {
     }
 }
 
-impl Drop for Texture {
-    fn drop(&mut self) {
-        unsafe { self.gl.DeleteTextures(1, self.id as *const bindings::types::GLuint);  }
-    }
-}
+// impl Drop for Texture {
+//     fn drop(&mut self) {
+//         unsafe { self.gl.DeleteTextures(1, self.id as *const bindings::types::GLuint);  }
+//     }
+// }
 
 pub fn load_gl(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
     let gl = Gl::load_with(|ptr| gl_context.get_proc_address(ptr) as *const std::os::raw::c_void);
