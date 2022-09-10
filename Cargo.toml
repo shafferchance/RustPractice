@@ -1,0 +1,11 @@
+[workspace]
+
+members = [
+  "chips_8",
+  "Chips8",
+  "graph",
+  "leetcode_sum",
+  "rust_os",
+  "simple-rust-web-app",
+  "timer_future",
+]
