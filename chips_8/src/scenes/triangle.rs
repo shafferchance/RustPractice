@@ -1,7 +1,7 @@
 use std::ffi::CString;
 
-use crate::gfx::init::{Object, Scene, render_object};
-use crate::gfx::init::bindings as bindings;
+use crate::gfx::core::{Object, Scene, render_object};
+use crate::gfx::core::bindings as bindings;
 
 pub fn create_triangle_scene(gl: &bindings::Gl) -> Scene {
     let mut objects = Vec::with_capacity(1); // I know there will only be one so no need to waste here

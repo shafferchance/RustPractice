@@ -7,7 +7,7 @@ use glutin::event_loop::{ControlFlow, EventLoop};
 use glutin::window::WindowBuilder;
 use glutin::ContextBuilder;
 
-use chips_8::gfx::init::load_gl;
+use chips_8::gfx::core::load_gl;
 
 fn main() {
     let el = EventLoop::new();
