@@ -3,14 +3,14 @@
 use chips_8::scenes::textured::create_textured_scene;
 // use chips_8::scenes::scissor::create_scissor_scene;
 use glutin::event::{Event, WindowEvent};
-use glutin::event_loop::{ControlFlow, EventLoop};
+use glutin::event_loop::{ControlFlow, EventLoopBuilder};
 use glutin::window::WindowBuilder;
 use glutin::ContextBuilder;
 
 use chips_8::gfx::core::load_gl;
 
 fn main() {
-    let el = EventLoop::new();
+    let el = EventLoopBuilder::new().build();
     let wb = WindowBuilder::new()
                                             .with_title("Chips 8")
                                             .with_inner_size(
