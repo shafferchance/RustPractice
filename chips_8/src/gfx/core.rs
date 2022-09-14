@@ -408,6 +408,7 @@ fn init_object_shaders(gl: &bindings::Gl, frag_src: Option<&CStr>, vert_src: Opt
     shaders.into_boxed_slice()
 }
 
+
 impl Object {
     pub fn new(vertices: Box<[f32]>, indices: Option<Box<[i32]>>, attributes: Box<[Attributes]>) -> Object {
         Object { vertices, attributes, indices, texture: None, program: None, buffers: None, stride_length: 0 }
@@ -445,7 +446,7 @@ impl Object {
 }
 
 pub struct Scene {
-    objects: Box<[Object]>,
+    pub objects: Box<[Object]>,
 }
 
 impl Scene {
@@ -464,6 +465,22 @@ fn unbind_buffers(gl: &bindings::Gl) {
 fn get_stride_from_attributes_tuple(attributes: &Box<[Attributes]>) -> (i32, bindings::types::GLint) {
     let stride_length = attributes.into_iter().map(| attrib | attrib.1).sum::<i32>();
     (stride_length, stride_length * std::mem::size_of::<f32>() as bindings::types::GLint)
+}
+
+pub fn edit_texture(texture: &mut Texture, x_t: (usize, usize), y_t: (usize, usize), pixel: &[u8]) {
+    (x_t.0..x_t.1).for_each(|x| {
+        (y_t.0..y_t.1).for_each(|y| {
+            texture.edit_texture_data(
+                x, 
+                y, 
+                (
+                    pixel[(x_t.1 - x) * (y_t.1 - y) as usize],
+                    pixel[((x_t.1 - x) * (y_t.1 - y) + 1) as usize],
+                    pixel[((x_t.1 - x) * (y_t.1 - y) + 2) as usize],
+                    pixel[((x_t.1 - x) * (y_t.1 - y) + 3) as usize]
+                ));
+        })
+    })
 }
 
 pub fn render_object(gl: &bindings::Gl, object: &mut Object) -> Result<(), String> {

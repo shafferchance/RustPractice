@@ -1,15 +1,16 @@
-// use chips_8::scenes::rectangle::create_rectangle_scene;
-// use chips_8::scenes::triangle::create_triangle_scene;
-use chips_8::scenes::textured::create_textured_scene;
-// use chips_8::scenes::scissor::create_scissor_scene;
+use chips_8::core::disassemble::DisassembledChip8;
 use glutin::event::{Event, WindowEvent};
 use glutin::event_loop::{ControlFlow, EventLoopBuilder};
 use glutin::window::WindowBuilder;
 use glutin::ContextBuilder;
 
-use chips_8::gfx::core::load_gl;
+use chips_8::gfx::core::{edit_texture, load_gl, render_scene};
+use chips_8::scenes::textured::{create_scene_with_chips_8_text};
+use chips_8::core::ops::MyChips8;
 
 fn main() {
+    let mut chips_8_state = MyChips8::new();
+
     let el = EventLoopBuilder::new().build();
     let wb = WindowBuilder::new()
                                             .with_title("Chips 8")
@@ -22,14 +23,25 @@ fn main() {
     println!("Pixel format of the window's GL context: {:?}", windowed_context.get_pixel_format());
     let gl = load_gl(&windowed_context.context());
 
-    // let scene = create_scissor_scene(&gl);
-    let scene = create_textured_scene(&gl);
-    // let scene = create_rectangle_scene(&gl);
-    // let scene = create_triangle_scene(&gl);
+    let mut scene = create_scene_with_chips_8_text(&gl, &chips_8_state.gfx);
+    // let mut scene = create_textured_scene(&gl);
+    let rom = include_bytes!("IBM_Logo.ch8");
+    println!("{:?}", rom.map(|rom_values| format!("{:X}", rom_values)));
+    print!("{}", DisassembledChip8::new(rom));
+    chips_8_state.load_rom(rom);
+    println!("{:?}", chips_8_state);
+
+    let mut wait_next_loop = false;
 
     el.run(move |event, _, control_flow| {
         // println!("{:?}", event);
-        *control_flow = ControlFlow::Wait;
+        if wait_next_loop {
+            *control_flow = ControlFlow::Wait;
+        }
+
+        if chips_8_state.pc < 4096 {
+            chips_8_state.enumlate_cycle();
+        }
 
         match event {
             Event::LoopDestroyed => return,
@@ -41,6 +53,26 @@ fn main() {
             Event::RedrawRequested(_) => {
                 gl.draw_frame([0.2, 0.3, 0.3, 1.0], &scene);
                 windowed_context.swap_buffers().unwrap();
+            },
+            Event::Resumed => {
+                println!("Resumed");
+                wait_next_loop = false;
+                chips_8_state.wait = false;
+            },
+            Event::MainEventsCleared => {
+                if chips_8_state.wait {
+                    wait_next_loop = true;
+                }
+
+                if chips_8_state.draw {
+                    chips_8_state.draw = false;
+                    println!("Draw");
+                    if let Some(texture) = &mut scene.objects[0].texture {
+                        edit_texture(texture, (0, 63), (0, 31), &chips_8_state.gfx);
+                    }
+
+                    render_scene(&gl, &scene);
+                }
             },
             _ => (),
         }
