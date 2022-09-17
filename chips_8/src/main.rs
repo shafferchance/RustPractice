@@ -4,7 +4,7 @@ use glutin::event_loop::{ControlFlow, EventLoopBuilder};
 use glutin::window::WindowBuilder;
 use glutin::ContextBuilder;
 
-use chips_8::gfx::core::{edit_texture, load_gl, render_scene};
+use chips_8::gfx::core::{load_gl, render_scene, chip_8_texture_to_opengl};
 use chips_8::scenes::textured::{create_scene_with_chips_8_text};
 use chips_8::core::ops::MyChips8;
 
@@ -68,7 +68,7 @@ fn main() {
                     chips_8_state.draw = false;
                     println!("Draw");
                     if let Some(texture) = &mut scene.objects[0].texture {
-                        edit_texture(texture, (0, 63), (0, 31), &chips_8_state.gfx);
+                        chip_8_texture_to_opengl(texture, &chips_8_state.gfx);
                     }
 
                     render_scene(&gl, &scene);

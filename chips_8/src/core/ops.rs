@@ -121,7 +121,15 @@ impl MyChips8 {
         self.opcode = (self.memory[self.pc as usize] as u16) << 8
             | self.memory[(self.pc + 1) as usize] as u16;
         self.pc += 2;
-        // println!("Op: {:X} | PC: {}", self.opcode, self.pc);
+
+        if self.opcode != 0x1228 {
+            println!("Op: {:X} | PC: {:X} | Vx {:X} | kk {:X}", 
+                self.opcode,
+                self.pc - 2,
+                get_vx(&self.opcode),
+                get_kk(&self.opcode)
+            );
+        }
         // Decode
         match self.opcode & 0xF000 {
             0x0000 => {
@@ -177,7 +185,7 @@ impl MyChips8 {
             // 0x6xkk - LD Vx, byte - Load kk into Vx
             0x6000 => {
                 let (vx, kk) = (get_vx(&self.opcode), get_kk(&self.opcode));
-                println!("Op: {:X} | Vx {:X} | kk {:X}", &self.opcode, &vx, &kk);
+                // println!("Op: {:X} | Vx {:X} | kk {:X}", &self.opcode, &vx, &kk);
                 self.set_register(vx, kk);
             }
 
@@ -288,7 +296,7 @@ impl MyChips8 {
             // 0xAnnn - LD I, addr - Sets I to the address nnn
             0xA000 => {
                 self.i = get_nnn(&self.opcode);
-                println!("i: {:X}", self.i);
+                // println!("i: {:X}", self.i);
             }
 
             // Bnnn - JP V0, addr - Jump to location addr
@@ -318,6 +326,7 @@ impl MyChips8 {
                         self.registers[0xF] = 0x0;
                     }
                     // Wrap around logic, where both (x,y) are out of bounds
+                    println!("X: {:X} | Y: {:X}", get_vx(&self.opcode), get_vy(&self.opcode));
                     match (get_vx(&self.opcode), get_vy(&self.opcode)) {
                         (x, y) if x > 63 && y > 31 => {
                             self.gfx[((63 - x) * (31 - y)) as usize + i] =
@@ -392,7 +401,9 @@ impl MyChips8 {
                 }
                 // 0xFx29 - LD F, Vx - Set I = location of sprite for digit Vx
                 0x0029 => {
-                    
+                    self.i = (FONT_BEGIN as u16 + get_vx(&self.opcode)) as u16;
+                    println!("Font Pointer: {:X} | Opcode: {:X}", get_vx(&self.opcode), self.opcode);
+                    self.wait = true;
                 }
                 // 0xFx33 - LD F, Vx - set_BCD
                 0x0033 => {

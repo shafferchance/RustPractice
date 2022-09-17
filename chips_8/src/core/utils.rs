@@ -15,5 +15,5 @@ pub fn get_vx(value: &u16) -> u16 {
 }
 
 pub fn get_vy(value: &u16) -> u16 {
-    return (value & 0x00F0) >> 8;
+    return (value & 0x00F0) >> 4;
 }

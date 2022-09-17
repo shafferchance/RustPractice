@@ -483,6 +483,18 @@ pub fn edit_texture(texture: &mut Texture, x_t: (usize, usize), y_t: (usize, usi
     })
 }
 
+pub fn chip_8_texture_to_opengl(texture: &mut Texture, pixel: &[u8]) {
+    (0..64).for_each(|x| {
+        (0..32).for_each(|y| {
+            let is_on = pixel[(x * y) as usize] == 1;
+            texture.edit_texture_data(x, y, match is_on {
+                true => (255, 255, 255, 255),
+                false => (0, 0, 0, 255)
+            })
+        })
+    })
+}
+
 pub fn render_object(gl: &bindings::Gl, object: &mut Object) -> Result<(), String> {
     let buffers = 
         match &object.indices {
