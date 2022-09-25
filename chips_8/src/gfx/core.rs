@@ -453,6 +453,15 @@ impl Scene {
     pub fn new( objects: Box<[Object]>) -> Scene {
         Scene { objects }
     }
+
+    pub fn render_scene_objects(&mut self, gl: &bindings::Gl) {
+        self.objects.iter_mut().for_each(|obj| {
+            match render_object(gl, obj) {
+                Ok(_) => (),
+                Err(err) => print!("{}", err)
+            }
+        })
+    }
 }
 
 fn unbind_buffers(gl: &bindings::Gl) {

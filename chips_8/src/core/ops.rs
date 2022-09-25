@@ -1,7 +1,6 @@
 use std::fmt::Debug;
-use glutin::{event_loop::{self, EventLoopProxy}, event::Event};
 
-use super::utils::{get_kk, get_nibble, get_nnn, get_vx, get_vy};
+use super::utils::{get_kk, get_nibble, get_nnn, get_x, get_y};
 
 pub struct MyChips8 {
     opcode: u16,          // 2B for storing current opcode
@@ -126,7 +125,7 @@ impl MyChips8 {
             println!("Op: {:X} | PC: {:X} | Vx {:X} | kk {:X}", 
                 self.opcode,
                 self.pc - 2,
-                get_vx(&self.opcode),
+                get_x(&self.opcode),
                 get_kk(&self.opcode)
             );
         }
@@ -163,61 +162,61 @@ impl MyChips8 {
 
             // 0x3xkk - SE Vx, byte - Skip next if Vx == kk
             0x3000 => {
-                if get_vx(&self.opcode) == get_kk(&self.opcode) {
+                if self.get_register_value(get_x(&self.opcode)) == get_kk(&self.opcode) {
                     self.pc += 2;
                 }
             }
 
             // 0x4xkk - SNE Vx, byte - Skip next if Vx != kk
             0x4000 => {
-                if get_vx(&self.opcode) != get_kk(&self.opcode) {
+                if self.get_register_value(get_x(&self.opcode)) != get_kk(&self.opcode) {
                     self.pc += 2;
                 }
             }
 
             // 0x5xy0 - SE Vx, Vy - Skip next if Vx == Vy
             0x5000 => {
-                if get_vx(&self.opcode) == get_vy(&self.opcode) {
+                if self.get_register_value(get_x(&self.opcode)) == self.get_register_value(get_y(&self.opcode)) {
                     self.pc += 2;
                 }
             }
 
             // 0x6xkk - LD Vx, byte - Load kk into Vx
             0x6000 => {
-                let (vx, kk) = (get_vx(&self.opcode), get_kk(&self.opcode));
+                let (x, kk) = (get_x(&self.opcode), get_kk(&self.opcode));
                 // println!("Op: {:X} | Vx {:X} | kk {:X}", &self.opcode, &vx, &kk);
-                self.set_register(vx, kk);
+                self.set_register(x, kk);
             }
 
             // 0x7xkk - ADD Vx, byte - Add value of byte
             0x7000 => {
                 self.set_register(
-                    get_vx(&self.opcode),
-                    self.get_register_value(get_vx(&self.opcode)) + get_kk(&self.opcode),
+                    get_x(&self.opcode),
+                    self.get_register_value(get_x(&self.opcode)) + get_kk(&self.opcode),
                 );
             }
 
             0x8000 => match self.opcode & 0x000F {
                 // LD Vx, Vy
                 0x0000 => {
-                    self.set_register(get_vx(&self.opcode), self.get_register_value(get_vy(&self.opcode)));
+                    self.set_register(get_x(&self.opcode), self.get_register_value(get_y(&self.opcode)));
                 }
                 // OR Vx, Vy
                 0x0001 => {
-                    self.set_register(get_vx(&self.opcode), get_vx(&self.opcode) | get_vy(&self.opcode));
+                    self.set_register(get_x(&self.opcode), get_x(&self.opcode) | get_y(&self.opcode));
                 }
                 // AND Vx, Vy
                 0x0002 => {
-                    self.set_register(get_vx(&self.opcode), get_vx(&self.opcode) & get_vy(&self.opcode));
+                    self.set_register(get_x(&self.opcode), get_x(&self.opcode) & get_y(&self.opcode));
                 }
                 // XOR Vx, Vy
                 0x0003 => {
-                    self.set_register(get_vx(&self.opcode), get_vx(&self.opcode) ^ get_vy(&self.opcode));
+                    self.set_register(get_x(&self.opcode), get_x(&self.opcode) ^ get_y(&self.opcode));
                 }
                 // ADD Vx, Vy - Add Vx to Vy
                 0x0004 => {
-                    if self.get_register_value(get_vy(&self.opcode))
-                        > (0xFF - self.get_register_value(get_vx(&self.opcode)))
+                    if self.get_register_value(get_y(&self.opcode))
+                        > (0xFF - self.get_register_value(get_x(&self.opcode)))
                     {
                         self.registers[0xF] = 0x1;
                     } else {
@@ -225,15 +224,15 @@ impl MyChips8 {
                     }
 
                     self.set_register(
-                        get_vx(&self.opcode),
-                        self.get_register_value(get_vx(&self.opcode))
-                            + self.get_register_value(get_vy(&self.opcode)),
+                        get_x(&self.opcode),
+                        self.get_register_value(get_x(&self.opcode))
+                            + self.get_register_value(get_y(&self.opcode)),
                     );
                 }
                 // SUB Vx, Vy - Subtract Vx from Vy
                 0x0005 => {
-                    if self.get_register_value(get_vx(&self.opcode))
-                        > self.get_register_value(get_vy(&self.opcode))
+                    if self.get_register_value(get_x(&self.opcode))
+                        > self.get_register_value(get_y(&self.opcode))
                     {
                         self.set_register(0xF, 0x1);
                     } else {
@@ -241,26 +240,26 @@ impl MyChips8 {
                     }
 
                     self.set_register(
-                        get_vx(&self.opcode),
-                        self.get_register_value(get_vx(&self.opcode))
-                            - self.get_register_value(get_vy(&self.opcode)),
+                        get_x(&self.opcode),
+                        self.get_register_value(get_x(&self.opcode))
+                            - self.get_register_value(get_y(&self.opcode)),
                     );
                 }
                 // SHR Vx - RHS 1
                 0x0006 => {
                     // Checking LSB of Vx
-                    if (get_vx(&self.opcode) & 0x1) == 1 {
+                    if (self.get_register_value(get_x(&self.opcode)) & 0x1) == 1 {
                         self.set_register(0xF, 0x1);
                     } else {
                         self.set_register(0xF, 0x0);
                     }
 
-                    self.set_register(get_vx(&self.opcode), self.get_register_value(get_vx(&self.opcode)) >> 1);
+                    self.set_register(get_x(&self.opcode), self.get_register_value(get_x(&self.opcode)) >> 1);
                 }
                 // SUBN Vx, Vy - Subtract Vy from Vx
                 0x0007 => {
-                    if self.get_register_value(get_vy(&self.opcode))
-                        > self.get_register_value(get_vx(&self.opcode))
+                    if self.get_register_value(get_y(&self.opcode))
+                        > self.get_register_value(get_x(&self.opcode))
                     {
                         self.set_register(0xF, 0x1);
                     } else {
@@ -268,26 +267,26 @@ impl MyChips8 {
                     }
 
                     self.set_register(
-                        get_vx(&self.opcode),
-                        self.get_register_value(get_vy(&self.opcode))
-                            - self.get_register_value(get_vx(&self.opcode)),
+                        get_x(&self.opcode),
+                        self.get_register_value(get_y(&self.opcode))
+                            - self.get_register_value(get_x(&self.opcode)),
                     );                }
                 // SHL Vx - LHS 1
                 0x000E => {
-                    if (get_vx(&self.opcode) & 0x8) == 1 {
+                    if (self.get_register_value(get_x(&self.opcode)) & 0x8) == 1 {
                         self.set_register(0xF, 0x1);
                     } else {
                         self.set_register(0xF, 0x0);
                     }
 
-                    self.set_register(get_vx(&self.opcode), self.get_register_value(get_vx(&self.opcode)) << 1);
+                    self.set_register(get_x(&self.opcode), self.get_register_value(get_x(&self.opcode)) << 1);
                 }
                 _ => panic!("Unsupported opcode detected: {:X}", self.opcode),
             },
 
             // 0x9xy0 - SNE Vx, Vy - Skip next instruction if Vx != Vy
             0x9000 => {
-                if self.get_register_value(get_vx(&self.opcode)) != self.get_register_value(get_vy(&self.opcode))
+                if self.get_register_value(get_x(&self.opcode)) != self.get_register_value(get_y(&self.opcode))
                 {
                     self.pc += 2;
                 }
@@ -307,54 +306,37 @@ impl MyChips8 {
             // Cxkk - RND Vx, byte - Random number from 0 to 255, then &'d w/ byte which is stored into Vx
             0xC000 => {
                 self.set_register(
-                    get_vx(&self.opcode),
+                    get_x(&self.opcode),
                     self.get_rand((get_kk(&self.opcode) as u8) & get_kk(&self.opcode) as u8) as u16,
                 );
             }
 
             // 0xDxyn - DRW Vx, Vy, nibble - Draw n-byte sprite starting at mem loc I @ (vx, Vy), set VF = collision
             0xD000 => {
-                for (i, &pixel) in self.memory
-                    [self.i as usize..(self.i + get_nibble(&self.opcode)) as usize]
-                    .iter()
-                    .enumerate()
+                self.registers[0xF] = 0x0;
+                for idx in 0..get_nibble(&self.opcode)
                 {
-                    // Collision check
-                    if self.gfx[(get_vx(&self.opcode) * get_vy(&self.opcode)) as usize] == 1 && pixel == 1 {
-                        self.registers[0xF] = 0x1;
-                    } else {
-                        self.registers[0xF] = 0x0;
-                    }
-                    // Wrap around logic, where both (x,y) are out of bounds
-                    println!("X: {:X} | Y: {:X}", get_vx(&self.opcode), get_vy(&self.opcode));
-                    match (get_vx(&self.opcode), get_vy(&self.opcode)) {
-                        (x, y) if x > 63 && y > 31 => {
-                            self.gfx[((63 - x) * (31 - y)) as usize + i] =
-                                self.gfx[((63 - x) * (31 - y)) as usize + i] ^ pixel;
+                    let v_x = self.registers[get_x(&self.opcode) as usize];
+                    let v_y = self.registers[get_y(&self.opcode) as usize];
+                    println!("Addr: {:X} | Idx: {:X}", self.i + idx, idx);
+
+                    let row = (v_y as usize + idx as usize) % 32;
+                    let mut sprite = self.memory[(self.i + idx) as usize];
+                    for bit_idx in 0..(sprite.count_ones() + sprite.count_zeros()) {
+                        let bit_value = (sprite & 0x80) >> 7;
+                        let col = ((v_x as u32 + bit_idx) % 64) as usize;
+                        println!("Bit: {:b} | X: {} | Y: {}", bit_value, row, col);
+                        let offset = row * 64 + col;
+
+                        if bit_value == 0x1 {
+                            if self.gfx[offset] != 0x0 {
+                                self.gfx[offset] = 0x0;
+                                self.registers[0xF] = 0x1;
+                            } else {
+                                self.gfx[offset] = 0x1;
+                            }
                         }
-                        // (x, y) if x < 0 && y < 0 => {
-                        //     self.gfx[((x + 63) * (y + 31)) as usize] =
-                        //         self.gfx[((x + 63) * (y + 31)) as usize] ^ pixel;
-                        // }
-                        (x, y) if x > 63 => {
-                            self.gfx[((63 - x) * y) as usize + i] =
-                                self.gfx[((63 - x) * y) as usize + i] ^ pixel;
-                        }
-                        (x, y) if y > 31 => {
-                            self.gfx[(x * (31 - y)) as usize + i] =
-                                self.gfx[(x * (31 - y)) as usize + i] ^ pixel;
-                        }
-                        // (x, y) if x < 0 => {
-                        //     self.gfx[((x + 63) * y) as usize] =
-                        //         self.gfx[((x + 63) * y) as usize] ^ pixel;
-                        // }
-                        // (x, y) if y < 0 => {
-                        //     self.gfx[(x * (y + 31)) as usize] =
-                        //         self.gfx[(x * (y + 31)) as usize] ^ pixel;
-                        // }
-                        (x, y) => {
-                            self.gfx[(x * y) as usize + i] = self.gfx[(x * y) as usize + i] ^ pixel;
-                        }
+                        sprite = sprite << 1;
                     }
                 }
                 self.draw = true;
@@ -363,14 +345,14 @@ impl MyChips8 {
             0xE000 => match self.opcode & 0x00FF {
                 // 0xEx9E - SKP Vx - Skip next instruction if key pressed
                 0x009E => {
-                    if self.key[get_vx(&self.opcode) as usize] == 1 {
+                    if self.key[get_x(&self.opcode) as usize] == 1 {
                         self.pc += 2;
                     }
                 }
 
                 // 0xExA1 - SKNP Vx - Skip next instruction if key not pressed
                 0x00A1 => {
-                    if self.key[get_vx(&self.opcode) as usize] == 0 {
+                    if self.key[get_x(&self.opcode) as usize] == 0 {
                         self.pc += 2;
                     }
                 }
@@ -380,7 +362,7 @@ impl MyChips8 {
             0xF000 => match self.opcode & 0x00FF {
                 // 0xFx07 - LD Vx, DT - Loading Delay Timer into Vx
                 0x0007 => {
-                    self.set_register(get_vx(&self.opcode), self.delay_timer);
+                    self.set_register(get_x(&self.opcode), self.delay_timer);
                 }
                 // 0xFx0A - LD Vx, K - Stop execution till key press
                 0x000A => {
@@ -389,34 +371,34 @@ impl MyChips8 {
                 }
                 // 0xFx15 - LD DT, Vx - Load Vx into DT
                 0x0015 => {
-                    self.delay_timer = self.get_register_value(get_vx(&self.opcode));
+                    self.delay_timer = self.get_register_value(get_x(&self.opcode));
                 }
                 // 0xFx18 - LD ST, Vx - Set sound timer to Vx
                 0x0018 => {
-                    self.sound_timer = self.get_register_value(get_vx(&self.opcode));
+                    self.sound_timer = self.get_register_value(get_x(&self.opcode));
                 }
                 // 0xFx1E - ADD I, Vx - Add I and Vx then store in I
                 0x001E => {
-                    self.i = self.i + self.get_register_value(get_vx(&self.opcode));
+                    self.i = self.i + self.get_register_value(get_x(&self.opcode));
                 }
                 // 0xFx29 - LD F, Vx - Set I = location of sprite for digit Vx
                 0x0029 => {
-                    self.i = (FONT_BEGIN as u16 + get_vx(&self.opcode)) as u16;
-                    println!("Font Pointer: {:X} | Opcode: {:X}", get_vx(&self.opcode), self.opcode);
+                    self.i = (FONT_BEGIN as u16 + self.get_register_value(get_x(&self.opcode))) as u16;
+                    println!("Font Pointer: {:X} | Opcode: {:X}", get_x(&self.opcode), self.opcode);
                     self.wait = true;
                 }
                 // 0xFx33 - LD F, Vx - set_BCD
                 0x0033 => {
                     self.memory[self.i as usize] =
-                        (self.get_register_value(get_vx(&self.opcode)) / 100) as u8;
+                        (self.get_register_value(get_x(&self.opcode)) / 100) as u8;
                     self.memory[(self.i + 1) as usize] =
-                        (((self.get_register_value(get_vx(&self.opcode)) / 100) / 10) % 10) as u8;
+                        (((self.get_register_value(get_x(&self.opcode)) / 100) / 10) % 10) as u8;
                     self.memory[(self.i + 2) as usize] =
-                        (((self.get_register_value(get_vx(&self.opcode)) / 100) % 100) % 10) as u8;
+                        (((self.get_register_value(get_x(&self.opcode)) / 100) % 100) % 10) as u8;
                 }
                 // 0xFx55 - LD [I], Vx -reg_dump
                 0x0055 => {
-                    for (i, &registry) in self.registers[0 as usize..get_vx(&self.opcode) as usize]
+                    for (i, &registry) in self.registers[0 as usize..get_x(&self.opcode) as usize]
                         .iter()
                         .enumerate()
                     {
@@ -427,7 +409,7 @@ impl MyChips8 {
                 // 0xFx65 - LD Vx, [I] - reg_load
                 0x0065 => {
                     for (i, &stored_registry) in self.memory
-                        [self.i as usize..get_vx(&self.opcode) as usize]
+                        [self.i as usize..self.get_register_value(get_x(&self.opcode)) as usize]
                         .iter()
                         .enumerate()
                     {

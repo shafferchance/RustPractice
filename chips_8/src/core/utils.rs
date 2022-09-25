@@ -10,10 +10,10 @@ pub fn get_nnn(value: &u16) -> u16 {
     return value & 0x0FFF;
 }
 
-pub fn get_vx(value: &u16) -> u16 {
+pub fn get_x(value: &u16) -> u16 {
     return (value & 0x0F00) >> 8;
 }
 
-pub fn get_vy(value: &u16) -> u16 {
+pub fn get_y(value: &u16) -> u16 {
     return (value & 0x00F0) >> 4;
 }
