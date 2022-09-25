@@ -85,8 +85,6 @@ impl MyChips8 {
             self.memory[0x200 + idx] = chip_8_program[idx];
         })
     }
-    // pub fn initialize(&self) {
-    // Reset register, memory, stack
 
     // Load fontsets
     fn load_font_set(&mut self) {
@@ -98,9 +96,6 @@ impl MyChips8 {
     // Reset Timers
     // }
 
-    // TODO: Decode to function pointers
-    // fn decodeOpcode (opcode: u16) {
-    // }
 
     // Utilizing a clamped LCG, not sure if this is random enough :/
     fn get_rand(&self, state: u8) -> u8 {
@@ -121,15 +116,6 @@ impl MyChips8 {
             | self.memory[(self.pc + 1) as usize] as u16;
         self.pc += 2;
 
-        if self.opcode != 0x1228 {
-            println!("Op: {:X} | PC: {:X} | Vx {:X} | kk {:X}", 
-                self.opcode,
-                self.pc - 2,
-                get_x(&self.opcode),
-                get_kk(&self.opcode)
-            );
-        }
-        // Decode
         match self.opcode & 0xF000 {
             0x0000 => {
                 match self.opcode & 0x00FF {
@@ -318,14 +304,13 @@ impl MyChips8 {
                 {
                     let v_x = self.registers[get_x(&self.opcode) as usize];
                     let v_y = self.registers[get_y(&self.opcode) as usize];
-                    println!("Addr: {:X} | Idx: {:X}", self.i + idx, idx);
 
                     let row = (v_y as usize + idx as usize) % 32;
                     let mut sprite = self.memory[(self.i + idx) as usize];
+
                     for bit_idx in 0..(sprite.count_ones() + sprite.count_zeros()) {
                         let bit_value = (sprite & 0x80) >> 7;
                         let col = ((v_x as u32 + bit_idx) % 64) as usize;
-                        println!("Bit: {:b} | X: {} | Y: {}", bit_value, row, col);
                         let offset = row * 64 + col;
 
                         if bit_value == 0x1 {

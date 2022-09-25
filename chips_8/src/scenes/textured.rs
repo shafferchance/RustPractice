@@ -82,7 +82,13 @@ pub fn create_textured_scene(gl: &bindings::Gl) -> Scene {
 pub fn create_scene_with_chips_8_text(gl: &bindings::Gl, pixels: &[u8; 64 * 32]) -> Scene {
     let mut objects = Vec::with_capacity(1); // I know there will only be one so no need to waste here
 
-    let rectangle_verts = get_quad_verts();
+    let rectangle_verts = [
+        // Positions       // Colors         // Texture coords
+         0.5,  0.5,  0.0,  1.0,  0.0,  0.0,  1.0,  0.0, //  top right
+         0.5, -0.5,  0.0,  0.0,  1.0,  0.0,  1.0,  1.0, //  bottom right
+        -0.5, -0.5,  0.0,  0.0,  0.0,  1.0,  0.0,  1.0, //  bottom left
+        -0.5,  0.5,  0.0,  1.0,  1.0,  0.0,  0.0,  0.0  //  top left
+    ];
 
     let indices = get_quad_indices();
 

@@ -332,7 +332,7 @@ impl Texture {
         self.pixels[index + 3] = pixel_data.3;
     }
 
-    pub fn load_texture_data(&self, ) {
+    pub fn load_texture_data(&self) {
         unsafe {
             self.gl.BindTexture(self.texture_type, 0);
             self.gl.BindTexture(self.texture_type, self.id);
@@ -493,9 +493,9 @@ pub fn edit_texture(texture: &mut Texture, x_t: (usize, usize), y_t: (usize, usi
 }
 
 pub fn chip_8_texture_to_opengl(texture: &mut Texture, pixel: &[u8]) {
-    (0..64).for_each(|x| {
-        (0..32).for_each(|y| {
-            let is_on = pixel[(x * y) as usize] == 1;
+    (0..32).for_each(|y| {
+        (0..64).for_each(|x| {
+            let is_on = pixel[(y * 64 + x) as usize] == 1;
             texture.edit_texture_data(x, y, match is_on {
                 true => (255, 255, 255, 255),
                 false => (0, 0, 0, 255)
@@ -516,8 +516,6 @@ pub fn render_object(gl: &bindings::Gl, object: &mut Object) -> Result<(), Strin
                 (vbo, vao, None)
             }
     };
-
-    println!("{:?}", buffers);
 
     object.buffers = Some(buffers);
 
